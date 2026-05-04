@@ -1,0 +1,411 @@
+// ─── Inputs ────────────────────────────────────────────────────────────────
+
+export interface ModelInputs {
+  // Revenue
+  subscriptionPrice: number
+  totalPUCChecks: number
+  pickupCharge: number
+  firstPickupFree: boolean
+  marketRatePerPUC: number
+  pucFrequency: number
+
+  // Costs
+  cac: number
+  partnerPUCCommission: number
+  ownUnitCostPerPUC: number
+  partnerTestsCount: number   // how many tests (per customer) go to partner PUC
+  driverCostPerPickup: number
+  floatReturnRate: number
+
+  // Partner network
+  numberOfPartners: number
+  partnerTestsPerDayEach: number
+
+  // Driver / ops
+  driverPickupsPerDay: number
+  driverMonthlyCost: number
+  ownMachineSetupCost: number
+
+  // Forecast
+  year1Subscribers: number
+  annualGrowthRate: number
+  avgTestsUsed: number
+  forecastYears: number
+}
+
+export const DEFAULT_INPUTS: ModelInputs = {
+  subscriptionPrice: 1000,
+  totalPUCChecks: 10,
+  pickupCharge: 90,
+  firstPickupFree: true,
+  marketRatePerPUC: 150,
+  pucFrequency: 2,
+  cac: 100,
+  partnerPUCCommission: 100,
+  ownUnitCostPerPUC: 30,
+  partnerTestsCount: 4,   // min(avgTestsUsed=5, pucFreq=2 × years=2) = 4
+  driverCostPerPickup: 70,
+  floatReturnRate: 10,
+  numberOfPartners: 5,
+  partnerTestsPerDayEach: 20,
+  driverPickupsPerDay: 12,
+  driverMonthlyCost: 21500,
+  ownMachineSetupCost: 150000,
+  year1Subscribers: 200,
+  annualGrowthRate: 80,
+  avgTestsUsed: 5,
+  forecastYears: 5,
+}
+
+// ─── Per-customer unit economics ───────────────────────────────────────────
+
+export interface UnitEcon {
+  paidPickups: number
+  pickupRevenue: number
+  totalRevenue: number
+  partnerTests: number
+  ownTests: number
+  pucCost: number
+  driverCost: number
+  totalCost: number
+  floatIncome: number
+  netProfit: number
+  breakEvenPrice: number
+  customerSaving: number
+  marketCost: number
+  pucarTotalCustomerPays: number
+  lifetimeDurationYears: number
+}
+
+// Internal: compute economics without break-even (avoids recursion)
+function computeNetProfit(inp: ModelInputs, U: number, subPrice: number): number {
+  const paidPickups = inp.firstPickupFree ? Math.max(0, U - 1) : U
+  const pickupRevenue = paidPickups * inp.pickupCharge
+  const totalRevenue = subPrice + pickupRevenue
+  const partnerTests = Math.min(U, inp.partnerTestsCount)
+  const ownTests = U - partnerTests
+  const pucCost = partnerTests * inp.partnerPUCCommission + ownTests * inp.ownUnitCostPerPUC
+  const driverCost = U * inp.driverCostPerPickup
+  const totalCost = inp.cac + pucCost + driverCost
+  const lifetimeDurationYears = U / inp.pucFrequency
+  const floatIncome = subPrice * (inp.floatReturnRate / 100) * lifetimeDurationYears / 2
+  return totalRevenue + floatIncome - totalCost
+}
+
+// Binary search for the subscription price where netProfit = 0
+function findBreakEvenPrice(inp: ModelInputs, U: number): number {
+  let lo = 0, hi = 50000
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2
+    if (computeNetProfit(inp, U, mid) > 0) hi = mid
+    else lo = mid
+  }
+  return Math.round((lo + hi) / 2)
+}
+
+export function computeUnitEcon(inp: ModelInputs, overrideU?: number): UnitEcon {
+  const U = overrideU ?? inp.avgTestsUsed
+  const subPrice = inp.subscriptionPrice
+
+  const paidPickups = inp.firstPickupFree ? Math.max(0, U - 1) : U
+  const pickupRevenue = paidPickups * inp.pickupCharge
+  const totalRevenue = subPrice + pickupRevenue
+
+  const partnerTests = Math.min(U, inp.partnerTestsCount)
+  const ownTests = U - partnerTests
+  const pucCost = partnerTests * inp.partnerPUCCommission + ownTests * inp.ownUnitCostPerPUC
+  const driverCost = U * inp.driverCostPerPickup
+  const totalCost = inp.cac + pucCost + driverCost
+
+  const lifetimeDurationYears = U / inp.pucFrequency
+  const floatIncome = subPrice * (inp.floatReturnRate / 100) * lifetimeDurationYears / 2
+
+  const netProfit = totalRevenue + floatIncome - totalCost
+
+  const marketCost = inp.totalPUCChecks * inp.marketRatePerPUC
+  const pucarTotalCustomerPays = subPrice + pickupRevenue
+  const customerSaving = marketCost - pucarTotalCustomerPays
+
+  const breakEvenPrice = findBreakEvenPrice(inp, U)
+
+  return {
+    paidPickups,
+    pickupRevenue,
+    totalRevenue,
+    partnerTests,
+    ownTests,
+    pucCost,
+    driverCost,
+    totalCost,
+    floatIncome,
+    netProfit,
+    breakEvenPrice,
+    customerSaving,
+    marketCost,
+    pucarTotalCustomerPays,
+    lifetimeDurationYears,
+  }
+}
+
+// ─── Utilisation chart (profit per # tests used) ──────────────────────────
+
+export interface UtilPoint {
+  testsUsed: number
+  netProfit: number
+  breakEven: boolean
+}
+
+export function computeUtilCurve(inp: ModelInputs): UtilPoint[] {
+  return Array.from({ length: inp.totalPUCChecks }, (_, i) => {
+    const u = i + 1
+    const econ = computeUnitEcon(inp, u)
+    return { testsUsed: u, netProfit: econ.netProfit, breakEven: false }
+  })
+}
+
+// ─── Cash balance per PUC event ────────────────────────────────────────────
+
+export interface CashPoint {
+  event: number
+  balance: number
+  phase: 'partner' | 'own'
+}
+
+export function computeCashflowPerPUC(inp: ModelInputs): CashPoint[] {
+  const subPrice = inp.subscriptionPrice
+  // first pickup is free of charge to customer, but PUCAR still pays driver
+  let balance = subPrice - inp.cac
+  const points: CashPoint[] = [{ event: 0, balance, phase: 'partner' }]
+
+  for (let i = 1; i <= inp.totalPUCChecks; i++) {
+    const phase: 'partner' | 'own' = i <= inp.partnerTestsCount ? 'partner' : 'own'
+    const pucCost = phase === 'partner' ? inp.partnerPUCCommission : inp.ownUnitCostPerPUC
+    const pickup = i === 1 && inp.firstPickupFree ? 0 : inp.pickupCharge
+    balance = balance + pickup - pucCost - inp.driverCostPerPickup
+    points.push({ event: i, balance, phase })
+  }
+
+  return points
+}
+
+// ─── Year-by-year cohort forecast ──────────────────────────────────────────
+
+export interface YearlyRow {
+  year: number
+  newSubs: number
+  activeSubs: number
+  subRevenue: number
+  pickupRevenue: number
+  floatIncome: number
+  cacSpend: number
+  pucCost: number
+  driverCost: number
+  ebitda: number
+  bankBalance: number
+}
+
+export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
+  const rows: YearlyRow[] = []
+  let bankBalance = 0
+  const lifetimeYears = inp.avgTestsUsed / inp.pucFrequency
+
+  for (let y = 1; y <= inp.forecastYears; y++) {
+    // New cohort for this year
+    const newSubs = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, y - 1))
+    const subRevenue = newSubs * inp.subscriptionPrice
+    const cacSpend = newSubs * inp.cac
+
+    // Sum across all active cohorts (cohort started in year s, now in year y)
+    let totalPickupRevenue = 0
+    let totalPucCost = 0
+    let totalDriverCost = 0
+    let totalActiveSubs = 0
+
+    for (let s = 1; s <= y; s++) {
+      const cohortSize = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, s - 1))
+      const age = y - s // years since joined (0-indexed)
+
+      if (age >= lifetimeYears) continue // cohort exhausted
+
+      totalActiveSubs += cohortSize
+
+      // tests done by this cohort this year
+      const testsAtStartOfYear = Math.min(inp.avgTestsUsed, inp.pucFrequency * age)
+      const testsAtEndOfYear = Math.min(inp.avgTestsUsed, inp.pucFrequency * (age + 1))
+      const testsThisYear = testsAtEndOfYear - testsAtStartOfYear
+
+      if (testsThisYear <= 0) continue
+
+      // pickup revenue for this cohort this year
+      // first test overall for a cohort is in year s (age=0), test #1
+      for (let t = 1; t <= testsThisYear; t++) {
+        const testNum = testsAtStartOfYear + t
+        const isPaidPickup = !(inp.firstPickupFree && testNum === 1)
+        if (isPaidPickup) totalPickupRevenue += cohortSize * inp.pickupCharge
+      }
+
+      // PUC cost per test: partner if test number ≤ partnerTestsCount, else own machine
+      for (let t = 0; t < testsThisYear; t++) {
+        const testNum = testsAtStartOfYear + t + 1  // 1-indexed lifetime test number
+        const isPartner = testNum <= inp.partnerTestsCount
+        totalPucCost += cohortSize * (isPartner ? inp.partnerPUCCommission : inp.ownUnitCostPerPUC)
+      }
+
+      totalDriverCost += cohortSize * testsThisYear * inp.driverCostPerPickup
+    }
+
+    const floatIncome = bankBalance * (inp.floatReturnRate / 100)
+    const totalRevenue = subRevenue + totalPickupRevenue + floatIncome
+    const totalCost = cacSpend + totalPucCost + totalDriverCost
+    const ebitda = totalRevenue - totalCost
+
+    bankBalance = bankBalance + ebitda
+
+    rows.push({
+      year: y,
+      newSubs,
+      activeSubs: totalActiveSubs,
+      subRevenue,
+      pickupRevenue: totalPickupRevenue,
+      floatIncome,
+      cacSpend,
+      pucCost: totalPucCost,
+      driverCost: totalDriverCost,
+      ebitda,
+      bankBalance,
+    })
+  }
+
+  return rows
+}
+
+// ─── Scenario lines (bank balance per utilisation scenario) ────────────────
+
+export interface ScenarioLine {
+  label: string
+  testsUsed: number
+  data: { year: number; bankBalance: number }[]
+}
+
+export function computeScenarios(inp: ModelInputs): ScenarioLine[] {
+  const scenarios = [1, 2, 3, 5, 7, 10].filter(u => u <= inp.totalPUCChecks)
+  return scenarios.map(u => ({
+    label: `${u} test${u > 1 ? 's' : ''}`,
+    testsUsed: u,
+    data: computeYearlyForecast({ ...inp, avgTestsUsed: u }).map(r => ({
+      year: r.year,
+      bankBalance: r.bankBalance,
+    })),
+  }))
+}
+
+// ─── Driver efficiency ─────────────────────────────────────────────────────
+
+export interface DriverMetrics {
+  trueDriverCostPerPickup: number
+  pickupMargin: number
+  maxCustomersPerDriver: number
+  driversNeededByYear: { year: number; drivers: number }[]
+}
+
+export function computeDriverMetrics(inp: ModelInputs, yearlyRows: YearlyRow[]): DriverMetrics {
+  const workingDaysPerMonth = 26
+  const trueDriverCostPerPickup = inp.driverMonthlyCost / (inp.driverPickupsPerDay * workingDaysPerMonth)
+  const pickupMargin = inp.pickupCharge - trueDriverCostPerPickup
+  const maxCustomersPerDriver = (inp.driverPickupsPerDay * workingDaysPerMonth * 12) / inp.pucFrequency
+
+  const driversNeededByYear = yearlyRows.map(row => ({
+    year: row.year,
+    drivers: Math.ceil(row.activeSubs / maxCustomersPerDriver),
+  }))
+
+  return { trueDriverCostPerPickup, pickupMargin, maxCustomersPerDriver, driversNeededByYear }
+}
+
+// ─── Partner network capacity ──────────────────────────────────────────────
+
+export interface PartnerYearRow {
+  year: number
+  activeSubs: number
+  dailyDemand: number        // PUC tests needed per day
+  totalDailyCapacity: number // numberOfPartners × partnerTestsPerDayEach
+  utilisationPct: number     // dailyDemand / totalDailyCapacity × 100
+  partnersNeeded: number     // ceil(dailyDemand / partnerTestsPerDayEach)
+  surplus: number            // totalDailyCapacity - dailyDemand (positive = headroom)
+}
+
+export interface PartnerNetworkMetrics {
+  totalDailyCapacity: number
+  maxSubscribersSupported: number  // how many subs current partners can serve
+  yearRows: PartnerYearRow[]
+}
+
+export function computePartnerNetwork(inp: ModelInputs, yearlyRows: YearlyRow[]): PartnerNetworkMetrics {
+  const workingDaysPerYear = 312  // 26 days/month × 12
+  const totalDailyCapacity = inp.numberOfPartners * inp.partnerTestsPerDayEach
+  // max subs = (capacity × workingDays) / pucFrequency
+  const maxSubscribersSupported = Math.floor((totalDailyCapacity * workingDaysPerYear) / inp.pucFrequency)
+
+  const yearRows: PartnerYearRow[] = yearlyRows.map(r => {
+    const testsPerYear = r.activeSubs * inp.pucFrequency
+    const dailyDemand = testsPerYear / workingDaysPerYear
+    const utilisationPct = totalDailyCapacity > 0 ? (dailyDemand / totalDailyCapacity) * 100 : Infinity
+    const partnersNeeded = Math.ceil(dailyDemand / inp.partnerTestsPerDayEach)
+    const surplus = totalDailyCapacity - dailyDemand
+    return { year: r.year, activeSubs: r.activeSubs, dailyDemand, totalDailyCapacity, utilisationPct, partnersNeeded, surplus }
+  })
+
+  return { totalDailyCapacity, maxSubscribersSupported, yearRows }
+}
+
+// ─── Own machine trigger ────────────────────────────────────────────────────
+
+export interface MachineMetrics {
+  savingPerPUC: number
+  pucsToRecoverMachine: number
+  subscribersNeeded: number
+}
+
+export function computeMachineMetrics(inp: ModelInputs): MachineMetrics {
+  const savingPerPUC = inp.partnerPUCCommission - inp.ownUnitCostPerPUC
+  const pucsToRecoverMachine = savingPerPUC > 0 ? Math.ceil(inp.ownMachineSetupCost / savingPerPUC) : Infinity
+  const subscribersNeeded = isFinite(pucsToRecoverMachine)
+    ? Math.ceil(pucsToRecoverMachine / inp.pucFrequency)
+    : Infinity
+
+  return { savingPerPUC, pucsToRecoverMachine, subscribersNeeded }
+}
+
+// ─── Top-level compute ─────────────────────────────────────────────────────
+
+export interface ComputedAll {
+  unit: UnitEcon
+  utilCurve: UtilPoint[]
+  cashflow: CashPoint[]
+  yearly: YearlyRow[]
+  scenarios: ScenarioLine[]
+  driver: DriverMetrics
+  machine: MachineMetrics
+  partnerNetwork: PartnerNetworkMetrics
+  ltv: number
+  cacPaybackMonths: number
+}
+
+export function computeAll(inp: ModelInputs): ComputedAll {
+  const unit = computeUnitEcon(inp)
+  const utilCurve = computeUtilCurve(inp)
+  const cashflow = computeCashflowPerPUC(inp)
+  const yearly = computeYearlyForecast(inp)
+  const scenarios = computeScenarios(inp)
+  const driver = computeDriverMetrics(inp, yearly)
+  const machine = computeMachineMetrics(inp)
+  const partnerNetwork = computePartnerNetwork(inp, yearly)
+
+  const ltv = unit.totalRevenue + unit.floatIncome
+  const annualRevenuePerCustomer = ltv / unit.lifetimeDurationYears
+  const cacPaybackMonths = annualRevenuePerCustomer > 0
+    ? Math.round((inp.cac / annualRevenuePerCustomer) * 12 * 10) / 10
+    : Infinity
+
+  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths }
+}
