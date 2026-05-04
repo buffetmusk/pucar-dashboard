@@ -41,7 +41,7 @@ export default function App() {
     }
   }
 
-  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths } = computed
+  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct } = computed
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'unit', label: 'Unit Economics' },
@@ -134,6 +134,34 @@ export default function App() {
             tooltip="How many months it takes for a customer's revenue to repay the cost of acquiring them. Under 12 months is excellent. Over 24 months is a red flag — you're funding too much growth upfront before seeing returns."
           />
         </div>
+
+        {/* Market reality check */}
+        {(() => {
+          const { color, bg, border, label, note } =
+            marketPenetrationPct < 1
+              ? { color: '#3b82f6', bg: 'rgba(59,130,246,0.05)', border: 'rgba(59,130,246,0.2)', label: 'Early-stage', note: 'Niche / early-adopter territory — focus on one city first.' }
+              : marketPenetrationPct < 5
+              ? { color: '#10b981', bg: 'rgba(16,185,129,0.05)', border: 'rgba(16,185,129,0.2)', label: 'Ambitious', note: 'Aggressive but not impossible — requires deep execution.' }
+              : marketPenetrationPct < 15
+              ? { color: '#f59e0b', bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.2)', label: 'Very optimistic', note: 'Largest Indian fleet services haven\'t hit 5% nationally.' }
+              : { color: '#ef4444', bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.2)', label: 'Unrealistic', note: 'No Indian mobility startup has captured this share. Revisit inputs.' }
+          return (
+            <div className="rounded-xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap"
+              style={{ background: bg, border: `1px solid ${border}` }}>
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="text-xs font-bold tracking-widest uppercase" style={{ color }}>{label}</span>
+                <span className="text-xs" style={{ color: '#9ca3af' }}>
+                  Peak: <span className="font-mono font-bold text-white">{peakActiveSubs.toLocaleString('en-IN')}</span> active subs (Year {peakYear})
+                </span>
+                <span className="text-xs" style={{ color: '#9ca3af' }}>
+                  = <span className="font-mono font-bold" style={{ color }}>{marketPenetrationPct.toFixed(2)}%</span>
+                  {' '}of India's ~7.5 crore registered 4-wheelers
+                </span>
+              </div>
+              <span className="text-xs" style={{ color: '#6b7280' }}>{note}</span>
+            </div>
+          )
+        })()}
 
         {/* Tab content */}
         {tab === 'unit' && (

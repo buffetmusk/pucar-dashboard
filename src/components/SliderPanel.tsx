@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ModelInputs } from '../lib/model'
 import { DEFAULT_INPUTS } from '../lib/model'
 import { currency, pct } from '../lib/formatters'
@@ -27,8 +28,8 @@ const LEFT_FIELDS: FieldDef[] = [
   { key: 'firstPickupFree', label: 'First pickup free?', isToggle: true },
   { key: 'marketRatePerPUC', label: 'Market rate per PUC', min: 100, max: 300, step: 10, format: currency },
   { key: 'pucFrequency', label: 'PUC tests per year', min: 1, max: 2, step: 1, format: v => v === 1 ? 'Annual' : 'Biannual' },
-  { key: 'year1Subscribers', label: 'Subscribers per partner per year', min: 5, max: 500, step: 5, format: v => `${v}/partner` },
-  { key: 'annualGrowthRate', label: 'Annual growth rate', min: 10, max: 400, step: 10, format: pct },
+  { key: 'year1Subscribers', label: 'Subscribers per partner per year', min: 5, max: 2000, step: 5, format: v => `${v}/partner` },
+  { key: 'annualGrowthRate', label: 'Annual growth rate', min: 0, max: 500, step: 10, format: pct },
   { key: 'avgTestsUsed', label: 'Avg tests used per subscriber', min: 1, max: 10, step: 1, format: v => `${v} tests` },
   { key: 'forecastYears', label: 'Forecast horizon', min: 3, max: 7, step: 1, format: v => `${v} years` },
 ]
@@ -80,18 +81,51 @@ function SliderField({ def, value, onChange }: {
   value: number
   onChange: (v: number) => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const commit = (raw: string) => {
+    const n = parseFloat(raw.replace(/,/g, ''))
+    if (!isNaN(n) && n >= def.min) onChange(n)
+    setEditing(false)
+  }
+
+  // slider range extends to cover typed values above the defined max
+  const sliderMax = Math.max(def.max, value)
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex justify-between items-center">
         <span className="text-xs" style={{ color: '#9ca3af' }}>{def.label}</span>
-        <span className="text-xs font-mono font-semibold" style={{ color: '#10b981' }}>
-          {def.format(value)}
-        </span>
+        {editing ? (
+          <input
+            type="number"
+            value={draft}
+            autoFocus
+            className="w-24 text-xs font-mono text-right outline-none"
+            style={{ background: 'transparent', borderBottom: '1px solid #10b981', color: '#10b981' }}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={e => commit(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commit((e.target as HTMLInputElement).value)
+              if (e.key === 'Escape') setEditing(false)
+            }}
+          />
+        ) : (
+          <span
+            className="text-xs font-mono font-semibold cursor-text select-none"
+            style={{ color: '#10b981' }}
+            title="Click to type a value"
+            onClick={() => { setDraft(String(value)); setEditing(true) }}
+          >
+            {def.format(value)}
+          </span>
+        )}
       </div>
       <input
         type="range"
         min={def.min}
-        max={def.max}
+        max={sliderMax}
         step={def.step}
         value={value}
         onChange={e => onChange(Number(e.target.value))}

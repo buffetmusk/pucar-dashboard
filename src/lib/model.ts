@@ -1,3 +1,5 @@
+export const INDIA_4W_FLEET = 75_000_000  // ~7.5 crore registered 4-wheelers in India
+
 // ─── Inputs ────────────────────────────────────────────────────────────────
 
 export interface ModelInputs {
@@ -423,6 +425,9 @@ export interface ComputedAll {
   partnerNetwork: PartnerNetworkMetrics
   ltv: number
   cacPaybackMonths: number
+  peakActiveSubs: number
+  peakYear: number
+  marketPenetrationPct: number
 }
 
 export function computeAll(inp: ModelInputs): ComputedAll {
@@ -441,5 +446,10 @@ export function computeAll(inp: ModelInputs): ComputedAll {
     ? Math.round((inp.cac / annualRevenuePerCustomer) * 12 * 10) / 10
     : Infinity
 
-  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths }
+  const peakRow = yearly.reduce((best, r) => r.activeSubs > best.activeSubs ? r : best, yearly[0] ?? { activeSubs: 0, year: 1 })
+  const peakActiveSubs = peakRow?.activeSubs ?? 0
+  const peakYear = peakRow?.year ?? 1
+  const marketPenetrationPct = (peakActiveSubs / INDIA_4W_FLEET) * 100
+
+  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct }
 }
