@@ -45,7 +45,9 @@ const RIGHT_COST_FIELDS: FieldDef[] = [
 const RIGHT_OPS_FIELDS: FieldDef[] = [
   { key: 'driverPickupsPerDay', label: 'Pickups per driver per day', min: 5, max: 30, step: 1, format: v => `${v}/day` },
   { key: 'driverMonthlyCost', label: 'Driver salary + fuel / month', min: 15000, max: 40000, step: 500, format: currency },
-  { key: 'ownMachineSetupCost', label: 'Own machine setup cost (capex)', min: 50000, max: 1000000, step: 10000, format: currency },
+  { key: 'ownMachineCount', label: 'Own PUC machines deployed', min: 0, max: 20, step: 1, format: v => `${v} machine${v !== 1 ? 's' : ''}` },
+  { key: 'ownMachineTestsPerDay', label: 'Tests per machine per day', min: 10, max: 200, step: 10, format: v => `${v} tests/day` },
+  { key: 'ownMachineSetupCost', label: 'Setup cost per machine (capex)', min: 50000, max: 1000000, step: 10000, format: currency },
 ]
 
 const PARTNER_FIELDS: FieldDef[] = [

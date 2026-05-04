@@ -14,6 +14,7 @@ import ScenarioChart from './components/ScenarioChart'
 import DriverPanel from './components/DriverPanel'
 import MachinePanel from './components/MachinePanel'
 import PartnerPanel from './components/PartnerPanel'
+import OwnMachineScalingPanel from './components/OwnMachineScalingPanel'
 
 type Tab = 'unit' | 'forecast' | 'scenarios'
 
@@ -41,7 +42,7 @@ export default function App() {
     }
   }
 
-  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct } = computed
+  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct } = computed
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'unit', label: 'Unit Economics' },
@@ -191,6 +192,8 @@ export default function App() {
               <DriverPanel metrics={driver} assumedCost={inputs.driverCostPerPickup} />
               <MachinePanel metrics={machine} inputs={inputs} />
             </div>
+
+            <OwnMachineScalingPanel scaling={machineScaling} currentCount={inputs.ownMachineCount} />
 
             <PartnerPanel metrics={partnerNetwork} inputs={inputs} />
           </div>

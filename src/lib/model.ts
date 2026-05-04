@@ -30,6 +30,8 @@ export interface ModelInputs {
   driverPickupsPerDay: number
   driverMonthlyCost: number
   ownMachineSetupCost: number
+  ownMachineCount: number        // how many own machines to deploy
+  ownMachineTestsPerDay: number  // capacity per machine per working day
 
   // Forecast
   year1Subscribers: number
@@ -58,7 +60,9 @@ export const DEFAULT_INPUTS: ModelInputs = {
   partnerOnboardingFee: 5000,
   driverPickupsPerDay: 12,
   driverMonthlyCost: 21500,
-  ownMachineSetupCost: 400000,   // ₹4L as stated
+  ownMachineSetupCost: 400000,
+  ownMachineCount: 1,
+  ownMachineTestsPerDay: 50,
   year1Subscribers: 40,
   annualGrowthRate: 80,
   avgTestsUsed: 5,
@@ -244,12 +248,14 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
     const cacSpend = newSubs * inp.cac
 
     let totalPickupRevenue = 0
-    let totalPucCost = 0
+    let totalPartnerTestsDemand = 0
+    let totalOwnTestsDemand = 0
     let totalDriverCost = 0
     let totalActiveSubs = 0
 
     for (let s = 1; s <= y; s++) {
-      const cohortSize = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, s - 1))
+      const cohortPartners = getPartnersForYear(s, inp)
+      const cohortSize = Math.round(inp.year1Subscribers * cohortPartners * Math.pow(1 + inp.annualGrowthRate / 100, s - 1))
       const age = y - s
 
       if (age >= lifetimeYears) continue
@@ -270,12 +276,25 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
 
       for (let t = 0; t < testsThisYear; t++) {
         const testNum = testsAtStartOfYear + t + 1
-        const isPartner = testNum <= inp.partnerTestsCount
-        totalPucCost += cohortSize * (isPartner ? inp.partnerPUCCommission : inp.ownUnitCostPerPUC)
+        if (testNum <= inp.partnerTestsCount) {
+          totalPartnerTestsDemand += cohortSize
+        } else {
+          totalOwnTestsDemand += cohortSize
+        }
       }
 
       totalDriverCost += cohortSize * testsThisYear * inp.driverCostPerPickup
     }
+
+    // Capacity-constrained own machine allocation — overflow spills back to partner rate
+    const workingDaysPerYear = 312
+    const machineDeployed = machineLaunchYear !== null && y >= machineLaunchYear
+    const ownCapacity = machineDeployed ? inp.ownMachineCount * inp.ownMachineTestsPerDay * workingDaysPerYear : 0
+    const actualOwnTests = Math.min(totalOwnTestsDemand, ownCapacity)
+    const overflow = totalOwnTestsDemand - actualOwnTests
+    const totalPucCost =
+      actualOwnTests * inp.ownUnitCostPerPUC +
+      (totalPartnerTestsDemand + overflow) * inp.partnerPUCCommission
 
     // Partner onboarding revenue — new partners per the growth schedule
     const scheduledPartners = getPartnersForYear(y, inp)
@@ -283,8 +302,8 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
     const partnerOnboardingRevenue = newPartners * inp.partnerOnboardingFee
     prevPartners = scheduledPartners
 
-    // Own machine capex — one-time deduction in launch year
-    const machineCapex = machineLaunchYear === y ? inp.ownMachineSetupCost : 0
+    // Own machine capex — all machines deployed in launch year
+    const machineCapex = machineLaunchYear === y ? inp.ownMachineCount * inp.ownMachineSetupCost : 0
 
     const floatIncome = bankBalance * (inp.floatReturnRate / 100)
     const totalRevenue = subRevenue + totalPickupRevenue + floatIncome + partnerOnboardingRevenue
@@ -404,12 +423,35 @@ export interface MachineMetrics {
 
 export function computeMachineMetrics(inp: ModelInputs): MachineMetrics {
   const savingPerPUC = inp.partnerPUCCommission - inp.ownUnitCostPerPUC
-  const pucsToRecoverMachine = savingPerPUC > 0 ? Math.ceil(inp.ownMachineSetupCost / savingPerPUC) : Infinity
+  const totalSetupCost = inp.ownMachineCount * inp.ownMachineSetupCost
+  const pucsToRecoverMachine = savingPerPUC > 0 ? Math.ceil(totalSetupCost / savingPerPUC) : Infinity
   const subscribersNeeded = isFinite(pucsToRecoverMachine)
     ? Math.ceil(pucsToRecoverMachine / inp.pucFrequency)
     : Infinity
 
   return { savingPerPUC, pucsToRecoverMachine, subscribersNeeded }
+}
+
+// ─── Own machine scaling analysis ─────────────────────────────────────────
+
+export interface MachineScalingPoint {
+  machineCount: number
+  totalCapex: number
+  finalBankBalance: number
+  yearlyData: { year: number; bankBalance: number; ebitda: number }[]
+}
+
+export function computeOwnMachineScaling(inp: ModelInputs): MachineScalingPoint[] {
+  return [0, 1, 2, 3, 5, 8, 10].map(n => {
+    const rows = computeYearlyForecast({ ...inp, ownMachineCount: n })
+    const totalCapex = rows.reduce((s, r) => s + r.machineCapex, 0)
+    return {
+      machineCount: n,
+      totalCapex,
+      finalBankBalance: rows[rows.length - 1]?.bankBalance ?? 0,
+      yearlyData: rows.map(r => ({ year: r.year, bankBalance: r.bankBalance, ebitda: r.ebitda })),
+    }
+  })
 }
 
 // ─── Top-level compute ─────────────────────────────────────────────────────
@@ -423,6 +465,7 @@ export interface ComputedAll {
   driver: DriverMetrics
   machine: MachineMetrics
   partnerNetwork: PartnerNetworkMetrics
+  machineScaling: MachineScalingPoint[]
   ltv: number
   cacPaybackMonths: number
   peakActiveSubs: number
@@ -439,6 +482,7 @@ export function computeAll(inp: ModelInputs): ComputedAll {
   const driver = computeDriverMetrics(inp, yearly)
   const machine = computeMachineMetrics(inp)
   const partnerNetwork = computePartnerNetwork(inp, yearly)
+  const machineScaling = computeOwnMachineScaling(inp)
 
   const ltv = unit.totalRevenue + unit.floatIncome
   const annualRevenuePerCustomer = ltv / unit.lifetimeDurationYears
@@ -451,5 +495,5 @@ export function computeAll(inp: ModelInputs): ComputedAll {
   const peakYear = peakRow?.year ?? 1
   const marketPenetrationPct = (peakActiveSubs / INDIA_4W_FLEET) * 100
 
-  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct }
+  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct }
 }
