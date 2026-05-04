@@ -95,10 +95,11 @@ export default function Tooltip({ text, position = 'top' }: TooltipProps) {
 }
 
 // Convenience wrapper: label + tooltip icon inline
-export function SectionHeader({ title, tooltip, color }: {
+export function SectionHeader({ title, tooltip, color, position }: {
   title: string
   tooltip: string
   color?: string
+  position?: 'top' | 'bottom' | 'left' | 'right'
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -108,7 +109,7 @@ export function SectionHeader({ title, tooltip, color }: {
       >
         {title}
       </span>
-      <Tooltip text={tooltip} />
+      <Tooltip text={tooltip} position={position} />
     </div>
   )
 }
