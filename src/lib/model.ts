@@ -20,6 +20,7 @@ export interface ModelInputs {
   // Partner network
   numberOfPartners: number
   partnerTestsPerDayEach: number
+  partnerOnboardingFee: number   // one-time fee charged to each new partner
 
   // Driver / ops
   driverPickupsPerDay: number
@@ -48,9 +49,10 @@ export const DEFAULT_INPUTS: ModelInputs = {
   floatReturnRate: 10,
   numberOfPartners: 5,
   partnerTestsPerDayEach: 20,
+  partnerOnboardingFee: 5000,
   driverPickupsPerDay: 12,
   driverMonthlyCost: 21500,
-  ownMachineSetupCost: 150000,
+  ownMachineSetupCost: 400000,   // ₹4L as stated
   year1Subscribers: 200,
   annualGrowthRate: 80,
   avgTestsUsed: 5,
@@ -197,9 +199,11 @@ export interface YearlyRow {
   subRevenue: number
   pickupRevenue: number
   floatIncome: number
+  partnerOnboardingRevenue: number
   cacSpend: number
   pucCost: number
   driverCost: number
+  machineCapex: number       // ownMachineSetupCost deducted in launch year, else 0
   ebitda: number
   bankBalance: number
 }
@@ -208,14 +212,22 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
   const rows: YearlyRow[] = []
   let bankBalance = 0
   const lifetimeYears = inp.avgTestsUsed / inp.pucFrequency
+  const workingDaysPerYear = 312
+
+  // Year in which PUCAR's own machine is needed (first cohort reaches own-unit tests)
+  const needsOwnMachine = inp.partnerTestsCount < inp.avgTestsUsed
+  const machineLaunchYear = needsOwnMachine
+    ? Math.max(1, Math.floor(inp.partnerTestsCount / inp.pucFrequency) + 1)
+    : null
+
+  // Track partners signed so far to compute new onboardings each year
+  let prevPartnersNeeded = inp.numberOfPartners
 
   for (let y = 1; y <= inp.forecastYears; y++) {
-    // New cohort for this year
     const newSubs = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, y - 1))
     const subRevenue = newSubs * inp.subscriptionPrice
     const cacSpend = newSubs * inp.cac
 
-    // Sum across all active cohorts (cohort started in year s, now in year y)
     let totalPickupRevenue = 0
     let totalPucCost = 0
     let totalDriverCost = 0
@@ -223,30 +235,26 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
 
     for (let s = 1; s <= y; s++) {
       const cohortSize = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, s - 1))
-      const age = y - s // years since joined (0-indexed)
+      const age = y - s
 
-      if (age >= lifetimeYears) continue // cohort exhausted
+      if (age >= lifetimeYears) continue
 
       totalActiveSubs += cohortSize
 
-      // tests done by this cohort this year
       const testsAtStartOfYear = Math.min(inp.avgTestsUsed, inp.pucFrequency * age)
       const testsAtEndOfYear = Math.min(inp.avgTestsUsed, inp.pucFrequency * (age + 1))
       const testsThisYear = testsAtEndOfYear - testsAtStartOfYear
 
       if (testsThisYear <= 0) continue
 
-      // pickup revenue for this cohort this year
-      // first test overall for a cohort is in year s (age=0), test #1
       for (let t = 1; t <= testsThisYear; t++) {
         const testNum = testsAtStartOfYear + t
         const isPaidPickup = !(inp.firstPickupFree && testNum === 1)
         if (isPaidPickup) totalPickupRevenue += cohortSize * inp.pickupCharge
       }
 
-      // PUC cost per test: partner if test number ≤ partnerTestsCount, else own machine
       for (let t = 0; t < testsThisYear; t++) {
-        const testNum = testsAtStartOfYear + t + 1  // 1-indexed lifetime test number
+        const testNum = testsAtStartOfYear + t + 1
         const isPartner = testNum <= inp.partnerTestsCount
         totalPucCost += cohortSize * (isPartner ? inp.partnerPUCCommission : inp.ownUnitCostPerPUC)
       }
@@ -254,9 +262,22 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
       totalDriverCost += cohortSize * testsThisYear * inp.driverCostPerPickup
     }
 
+    // Partner onboarding revenue — new partners signed this year
+    const dailyDemand = (totalActiveSubs * inp.pucFrequency) / workingDaysPerYear
+    const partnersNeededThisYear = Math.max(
+      inp.numberOfPartners,
+      Math.ceil(dailyDemand / inp.partnerTestsPerDayEach)
+    )
+    const newPartners = Math.max(0, partnersNeededThisYear - prevPartnersNeeded)
+    const partnerOnboardingRevenue = newPartners * inp.partnerOnboardingFee
+    prevPartnersNeeded = partnersNeededThisYear
+
+    // Own machine capex — one-time deduction in launch year
+    const machineCapex = machineLaunchYear === y ? inp.ownMachineSetupCost : 0
+
     const floatIncome = bankBalance * (inp.floatReturnRate / 100)
-    const totalRevenue = subRevenue + totalPickupRevenue + floatIncome
-    const totalCost = cacSpend + totalPucCost + totalDriverCost
+    const totalRevenue = subRevenue + totalPickupRevenue + floatIncome + partnerOnboardingRevenue
+    const totalCost = cacSpend + totalPucCost + totalDriverCost + machineCapex
     const ebitda = totalRevenue - totalCost
 
     bankBalance = bankBalance + ebitda
@@ -268,9 +289,11 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
       subRevenue,
       pickupRevenue: totalPickupRevenue,
       floatIncome,
+      partnerOnboardingRevenue,
       cacSpend,
       pucCost: totalPucCost,
       driverCost: totalDriverCost,
+      machineCapex,
       ebitda,
       bankBalance,
     })

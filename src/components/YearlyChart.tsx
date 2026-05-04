@@ -66,11 +66,13 @@ export default function YearlyChart({ data }: YearlyChartProps) {
 
           <Bar yAxisId="left" dataKey="subRevenue" name="Sub Revenue" stackId="rev" fill="#3b82f6" opacity={0.85} />
           <Bar yAxisId="left" dataKey="pickupRevenue" name="Pickup Rev" stackId="rev" fill="#10b981" opacity={0.85} />
-          <Bar yAxisId="left" dataKey="floatIncome" name="Float" stackId="rev" fill="#14b8a6" opacity={0.85} radius={[3, 3, 0, 0]} />
+          <Bar yAxisId="left" dataKey="floatIncome" name="Float" stackId="rev" fill="#14b8a6" opacity={0.85} />
+          <Bar yAxisId="left" dataKey="partnerOnboardingRevenue" name="Partner Fees" stackId="rev" fill="#a78bfa" opacity={0.85} radius={[3, 3, 0, 0]} />
 
           <Bar yAxisId="left" dataKey="cacSpend" name="CAC" stackId="cost" fill="#fca5a5" opacity={0.7} />
           <Bar yAxisId="left" dataKey="pucCost" name="PUC Cost" stackId="cost" fill="#ef4444" opacity={0.7} />
-          <Bar yAxisId="left" dataKey="driverCost" name="Driver" stackId="cost" fill="#f59e0b" opacity={0.7} radius={[3, 3, 0, 0]} />
+          <Bar yAxisId="left" dataKey="driverCost" name="Driver" stackId="cost" fill="#f59e0b" opacity={0.7} />
+          <Bar yAxisId="left" dataKey="machineCapex" name="Machine Capex" stackId="cost" fill="#a855f7" opacity={0.8} radius={[3, 3, 0, 0]} />
 
           <Line
             yAxisId="right"

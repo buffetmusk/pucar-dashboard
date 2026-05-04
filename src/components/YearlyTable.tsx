@@ -22,12 +22,14 @@ export default function YearlyTable({ data }: YearlyTableProps) {
       subRevenue: acc.subRevenue + r.subRevenue,
       pickupRevenue: acc.pickupRevenue + r.pickupRevenue,
       floatIncome: acc.floatIncome + r.floatIncome,
+      partnerOnboardingRevenue: acc.partnerOnboardingRevenue + r.partnerOnboardingRevenue,
       cacSpend: acc.cacSpend + r.cacSpend,
       pucCost: acc.pucCost + r.pucCost,
       driverCost: acc.driverCost + r.driverCost,
+      machineCapex: acc.machineCapex + r.machineCapex,
       ebitda: acc.ebitda + r.ebitda,
     }),
-    { newSubs: 0, subRevenue: 0, pickupRevenue: 0, floatIncome: 0, cacSpend: 0, pucCost: 0, driverCost: 0, ebitda: 0 }
+    { newSubs: 0, subRevenue: 0, pickupRevenue: 0, floatIncome: 0, partnerOnboardingRevenue: 0, cacSpend: 0, pucCost: 0, driverCost: 0, machineCapex: 0, ebitda: 0 }
   )
 
   const exportCSV = () => {
@@ -67,7 +69,7 @@ export default function YearlyTable({ data }: YearlyTableProps) {
         <table className="w-full border-collapse">
           <thead>
             <tr style={{ borderBottom: '1px solid #2a2f38' }}>
-              {['Year', 'New Subs', 'Active Subs', 'Sub Rev', 'Pickup Rev', 'Float', 'CAC', 'PUC Cost', 'Driver', 'EBITDA', 'Bank Bal'].map(h => (
+              {['Year', 'New Subs', 'Active Subs', 'Sub Rev', 'Pickup Rev', 'Float', 'Partner Fee', 'CAC', 'PUC Cost', 'Driver', 'Machine', 'EBITDA', 'Bank Bal'].map(h => (
                 <th key={h} className={th} style={{ color: '#6b7280' }}>{h}</th>
               ))}
             </tr>
@@ -82,9 +84,15 @@ export default function YearlyTable({ data }: YearlyTableProps) {
                 <td className={td}><C v={r.subRevenue} /></td>
                 <td className={td}><C v={r.pickupRevenue} /></td>
                 <td className={td}><C v={r.floatIncome} /></td>
+                <td className={td}><C v={r.partnerOnboardingRevenue} /></td>
                 <td className={td}><C v={r.cacSpend} forcePosNeg={false} /></td>
                 <td className={td}><C v={r.pucCost} forcePosNeg={false} /></td>
                 <td className={td}><C v={r.driverCost} forcePosNeg={false} /></td>
+                <td className={td}>
+                  {r.machineCapex > 0
+                    ? <span className="font-mono text-xs font-bold" style={{ color: '#a855f7' }}>-{currency(r.machineCapex)}</span>
+                    : <span className="text-xs" style={{ color: '#374151' }}>—</span>}
+                </td>
                 <td className={td}><C v={r.ebitda} /></td>
                 <td className={td}><C v={r.bankBalance} /></td>
               </tr>
@@ -96,9 +104,11 @@ export default function YearlyTable({ data }: YearlyTableProps) {
               <td className={td}><C v={totals.subRevenue} /></td>
               <td className={td}><C v={totals.pickupRevenue} /></td>
               <td className={td}><C v={totals.floatIncome} /></td>
+              <td className={td}><C v={totals.partnerOnboardingRevenue} /></td>
               <td className={td}><C v={totals.cacSpend} forcePosNeg={false} /></td>
               <td className={td}><C v={totals.pucCost} forcePosNeg={false} /></td>
               <td className={td}><C v={totals.driverCost} forcePosNeg={false} /></td>
+              <td className={td}><C v={totals.machineCapex} forcePosNeg={false} /></td>
               <td className={td}><C v={totals.ebitda} /></td>
               <td className={td}><span className="text-xs text-gray-500">—</span></td>
             </tr>

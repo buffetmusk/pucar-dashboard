@@ -44,12 +44,13 @@ const RIGHT_COST_FIELDS: FieldDef[] = [
 const RIGHT_OPS_FIELDS: FieldDef[] = [
   { key: 'driverPickupsPerDay', label: 'Pickups per driver per day', min: 5, max: 30, step: 1, format: v => `${v}/day` },
   { key: 'driverMonthlyCost', label: 'Driver salary + fuel / month', min: 15000, max: 40000, step: 500, format: currency },
-  { key: 'ownMachineSetupCost', label: 'Own machine setup cost', min: 50000, max: 500000, step: 10000, format: currency },
+  { key: 'ownMachineSetupCost', label: 'Own machine setup cost (capex)', min: 50000, max: 1000000, step: 10000, format: currency },
 ]
 
 const PARTNER_FIELDS: FieldDef[] = [
   { key: 'numberOfPartners', label: 'Number of partner PUC centres', min: 1, max: 50, step: 1, format: v => `${v} partners` },
   { key: 'partnerTestsPerDayEach', label: 'Tests per partner per day', min: 5, max: 100, step: 5, format: v => `${v} tests/day` },
+  { key: 'partnerOnboardingFee', label: 'Partner onboarding fee (one-time)', min: 0, max: 50000, step: 500, format: currency },
 ]
 
 interface SliderPanelProps {
