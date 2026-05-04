@@ -48,7 +48,9 @@ const RIGHT_OPS_FIELDS: FieldDef[] = [
 ]
 
 const PARTNER_FIELDS: FieldDef[] = [
-  { key: 'numberOfPartners', label: 'Number of partner PUC centres', min: 1, max: 50, step: 1, format: v => `${v} partners` },
+  { key: 'partnerUnitsYear1', label: 'Partner centres — Year 1', min: 1, max: 50, step: 1, format: v => `${v} partners` },
+  { key: 'partnerUnitsYear2', label: 'Partner centres — Year 2', min: 1, max: 100, step: 1, format: v => `${v} partners` },
+  { key: 'partnerGrowthRateFromYear3', label: 'Partner growth rate (Year 3+)', min: 0, max: 200, step: 5, format: pct },
   { key: 'partnerTestsPerDayEach', label: 'Tests per partner per day', min: 5, max: 100, step: 5, format: v => `${v} tests/day` },
   { key: 'partnerOnboardingFee', label: 'Partner onboarding fee (one-time)', min: 0, max: 50000, step: 500, format: currency },
 ]

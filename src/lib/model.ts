@@ -18,9 +18,11 @@ export interface ModelInputs {
   floatReturnRate: number
 
   // Partner network
-  numberOfPartners: number
+  partnerUnitsYear1: number          // partners active in Year 1
+  partnerUnitsYear2: number          // partners active in Year 2
+  partnerGrowthRateFromYear3: number // % growth per year from Year 3 onwards
   partnerTestsPerDayEach: number
-  partnerOnboardingFee: number   // one-time fee charged to each new partner
+  partnerOnboardingFee: number       // one-time fee charged to each new partner
 
   // Driver / ops
   driverPickupsPerDay: number
@@ -47,7 +49,9 @@ export const DEFAULT_INPUTS: ModelInputs = {
   partnerTestsCount: 4,   // min(avgTestsUsed=5, pucFreq=2 × years=2) = 4
   driverCostPerPickup: 70,
   floatReturnRate: 10,
-  numberOfPartners: 5,
+  partnerUnitsYear1: 5,
+  partnerUnitsYear2: 10,
+  partnerGrowthRateFromYear3: 30,
   partnerTestsPerDayEach: 20,
   partnerOnboardingFee: 5000,
   driverPickupsPerDay: 12,
@@ -190,6 +194,15 @@ export function computeCashflowPerPUC(inp: ModelInputs): CashPoint[] {
   return points
 }
 
+// ─── Partner growth schedule ───────────────────────────────────────────────
+
+export function getPartnersForYear(year: number, inp: ModelInputs): number {
+  if (year <= 1) return inp.partnerUnitsYear1
+  if (year === 2) return inp.partnerUnitsYear2
+  const growthYears = year - 2
+  return Math.round(inp.partnerUnitsYear2 * Math.pow(1 + inp.partnerGrowthRateFromYear3 / 100, growthYears))
+}
+
 // ─── Year-by-year cohort forecast ──────────────────────────────────────────
 
 export interface YearlyRow {
@@ -212,7 +225,6 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
   const rows: YearlyRow[] = []
   let bankBalance = 0
   const lifetimeYears = inp.avgTestsUsed / inp.pucFrequency
-  const workingDaysPerYear = 312
 
   // Year in which PUCAR's own machine is needed (first cohort reaches own-unit tests)
   const needsOwnMachine = inp.partnerTestsCount < inp.avgTestsUsed
@@ -220,8 +232,8 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
     ? Math.max(1, Math.floor(inp.partnerTestsCount / inp.pucFrequency) + 1)
     : null
 
-  // Track partners signed so far to compute new onboardings each year
-  let prevPartnersNeeded = inp.numberOfPartners
+  // Track partners onboarded so far to compute new additions each year
+  let prevPartners = 0
 
   for (let y = 1; y <= inp.forecastYears; y++) {
     const newSubs = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, y - 1))
@@ -262,15 +274,11 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
       totalDriverCost += cohortSize * testsThisYear * inp.driverCostPerPickup
     }
 
-    // Partner onboarding revenue — new partners signed this year
-    const dailyDemand = (totalActiveSubs * inp.pucFrequency) / workingDaysPerYear
-    const partnersNeededThisYear = Math.max(
-      inp.numberOfPartners,
-      Math.ceil(dailyDemand / inp.partnerTestsPerDayEach)
-    )
-    const newPartners = Math.max(0, partnersNeededThisYear - prevPartnersNeeded)
+    // Partner onboarding revenue — new partners per the growth schedule
+    const scheduledPartners = getPartnersForYear(y, inp)
+    const newPartners = Math.max(0, scheduledPartners - prevPartners)
     const partnerOnboardingRevenue = newPartners * inp.partnerOnboardingFee
-    prevPartnersNeeded = partnersNeededThisYear
+    prevPartners = scheduledPartners
 
     // Own machine capex — one-time deduction in launch year
     const machineCapex = machineLaunchYear === y ? inp.ownMachineSetupCost : 0
@@ -349,9 +357,10 @@ export function computeDriverMetrics(inp: ModelInputs, yearlyRows: YearlyRow[]):
 
 export interface PartnerYearRow {
   year: number
+  partners: number           // scheduled partners for this year
   activeSubs: number
   dailyDemand: number        // PUC tests needed per day
-  totalDailyCapacity: number // numberOfPartners × partnerTestsPerDayEach
+  totalDailyCapacity: number // partners × partnerTestsPerDayEach
   utilisationPct: number     // dailyDemand / totalDailyCapacity × 100
   partnersNeeded: number     // ceil(dailyDemand / partnerTestsPerDayEach)
   surplus: number            // totalDailyCapacity - dailyDemand (positive = headroom)
@@ -364,21 +373,22 @@ export interface PartnerNetworkMetrics {
 }
 
 export function computePartnerNetwork(inp: ModelInputs, yearlyRows: YearlyRow[]): PartnerNetworkMetrics {
-  const workingDaysPerYear = 312  // 26 days/month × 12
-  const totalDailyCapacity = inp.numberOfPartners * inp.partnerTestsPerDayEach
-  // max subs = (capacity × workingDays) / pucFrequency
-  const maxSubscribersSupported = Math.floor((totalDailyCapacity * workingDaysPerYear) / inp.pucFrequency)
+  const workingDaysPerYear = 312
+  const year1Capacity = inp.partnerUnitsYear1 * inp.partnerTestsPerDayEach
+  const maxSubscribersSupported = Math.floor((year1Capacity * workingDaysPerYear) / inp.pucFrequency)
 
   const yearRows: PartnerYearRow[] = yearlyRows.map(r => {
+    const partners = getPartnersForYear(r.year, inp)
+    const totalDailyCapacity = partners * inp.partnerTestsPerDayEach
     const testsPerYear = r.activeSubs * inp.pucFrequency
     const dailyDemand = testsPerYear / workingDaysPerYear
     const utilisationPct = totalDailyCapacity > 0 ? (dailyDemand / totalDailyCapacity) * 100 : Infinity
     const partnersNeeded = Math.ceil(dailyDemand / inp.partnerTestsPerDayEach)
     const surplus = totalDailyCapacity - dailyDemand
-    return { year: r.year, activeSubs: r.activeSubs, dailyDemand, totalDailyCapacity, utilisationPct, partnersNeeded, surplus }
+    return { year: r.year, partners, activeSubs: r.activeSubs, dailyDemand, totalDailyCapacity, utilisationPct, partnersNeeded, surplus }
   })
 
-  return { totalDailyCapacity, maxSubscribersSupported, yearRows }
+  return { totalDailyCapacity: year1Capacity, maxSubscribersSupported, yearRows }
 }
 
 // ─── Own machine trigger ────────────────────────────────────────────────────
