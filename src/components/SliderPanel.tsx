@@ -27,7 +27,7 @@ const LEFT_FIELDS: FieldDef[] = [
   { key: 'firstPickupFree', label: 'First pickup free?', isToggle: true },
   { key: 'marketRatePerPUC', label: 'Market rate per PUC', min: 100, max: 300, step: 10, format: currency },
   { key: 'pucFrequency', label: 'PUC tests per year', min: 1, max: 2, step: 1, format: v => v === 1 ? 'Annual' : 'Biannual' },
-  { key: 'year1Subscribers', label: 'New subscribers Year 1', min: 50, max: 5000, step: 50, format: v => `${v.toLocaleString('en-IN')}` },
+  { key: 'year1Subscribers', label: 'Subscribers per partner per year', min: 5, max: 500, step: 5, format: v => `${v}/partner` },
   { key: 'annualGrowthRate', label: 'Annual growth rate', min: 10, max: 400, step: 10, format: pct },
   { key: 'avgTestsUsed', label: 'Avg tests used per subscriber', min: 1, max: 10, step: 1, format: v => `${v} tests` },
   { key: 'forecastYears', label: 'Forecast horizon', min: 3, max: 7, step: 1, format: v => `${v} years` },
@@ -65,12 +65,12 @@ interface SliderPanelProps {
 
 const PRESETS: Record<string, Partial<ModelInputs>> = {
   conservative: {
-    subscriptionPrice: 800, year1Subscribers: 100, annualGrowthRate: 40,
+    subscriptionPrice: 800, year1Subscribers: 20, annualGrowthRate: 20,
     avgTestsUsed: 7, cac: 150, partnerTestsCount: 7,
   },
   base: DEFAULT_INPUTS,
   optimistic: {
-    subscriptionPrice: 1500, year1Subscribers: 500, annualGrowthRate: 120,
+    subscriptionPrice: 1500, year1Subscribers: 80, annualGrowthRate: 60,
     avgTestsUsed: 4, cac: 80, partnerTestsCount: 2,
   },
 }

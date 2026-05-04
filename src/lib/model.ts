@@ -57,7 +57,7 @@ export const DEFAULT_INPUTS: ModelInputs = {
   driverPickupsPerDay: 12,
   driverMonthlyCost: 21500,
   ownMachineSetupCost: 400000,   // ₹4L as stated
-  year1Subscribers: 200,
+  year1Subscribers: 40,
   annualGrowthRate: 80,
   avgTestsUsed: 5,
   forecastYears: 5,
@@ -236,7 +236,8 @@ export function computeYearlyForecast(inp: ModelInputs): YearlyRow[] {
   let prevPartners = 0
 
   for (let y = 1; y <= inp.forecastYears; y++) {
-    const newSubs = Math.round(inp.year1Subscribers * Math.pow(1 + inp.annualGrowthRate / 100, y - 1))
+    const partners = getPartnersForYear(y, inp)
+    const newSubs = Math.round(inp.year1Subscribers * partners * Math.pow(1 + inp.annualGrowthRate / 100, y - 1))
     const subRevenue = newSubs * inp.subscriptionPrice
     const cacSpend = newSubs * inp.cac
 
