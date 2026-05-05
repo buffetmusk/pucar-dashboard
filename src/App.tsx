@@ -15,8 +15,9 @@ import DriverPanel from './components/DriverPanel'
 import MachinePanel from './components/MachinePanel'
 import PartnerPanel from './components/PartnerPanel'
 import OwnMachineScalingPanel from './components/OwnMachineScalingPanel'
+import ModelComparisonPanel from './components/ModelComparisonPanel'
 
-type Tab = 'unit' | 'forecast' | 'scenarios'
+type Tab = 'unit' | 'forecast' | 'scenarios' | 'compare'
 
 export default function App() {
   const [inputs, setInputs] = useState<ModelInputs>(DEFAULT_INPUTS)
@@ -42,12 +43,13 @@ export default function App() {
     }
   }
 
-  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct } = computed
+  const { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, comparison, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct } = computed
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'unit', label: 'Unit Economics' },
     { id: 'forecast', label: 'Forecast' },
     { id: 'scenarios', label: 'Scenarios' },
+    { id: 'compare', label: 'Compare Models' },
   ]
 
   return (
@@ -262,6 +264,25 @@ export default function App() {
                     })}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'compare' && (
+          <div className="flex flex-col gap-6">
+            <div className="grid grid-cols-3 gap-6">
+              <div className="col-span-1">
+                <SliderPanel
+                  inputs={inputs}
+                  onChange={handleChange}
+                  onReset={handleReset}
+                  preset={preset}
+                  onPreset={handlePreset}
+                />
+              </div>
+              <div className="col-span-2 flex flex-col gap-6">
+                <ModelComparisonPanel data={comparison} inputs={inputs} />
               </div>
             </div>
           </div>

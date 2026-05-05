@@ -454,6 +454,92 @@ export function computeOwnMachineScaling(inp: ModelInputs): MachineScalingPoint[
   })
 }
 
+// ─── Partner vs Own-machine comparison ────────────────────────────────────
+
+interface ComparisonScenario {
+  label: 'partner' | 'own'
+  unit: UnitEcon
+  yearly: YearlyRow[]
+  finalBankBalance: number
+  totalMachineCapex: number
+}
+
+interface ComparisonVerdict {
+  perCustomerWinner: 'partner' | 'own' | 'tie'
+  perCustomerProfitDelta: number
+  longTermWinner: 'partner' | 'own' | 'tie'
+  finalBalanceDelta: number
+  crossoverYear: number | null
+  capexRecovered: boolean
+  savingPerPUC: number
+  summary: string
+}
+
+export interface ModelComparisonData {
+  partner: ComparisonScenario
+  own: ComparisonScenario
+  verdict: ComparisonVerdict
+}
+
+export function computeModelComparison(inp: ModelInputs): ModelComparisonData {
+  const partnerInp: ModelInputs = { ...inp, partnerTestsCount: inp.avgTestsUsed, ownMachineCount: 0 }
+  const ownInp: ModelInputs = { ...inp, partnerTestsCount: 0, ownMachineCount: Math.max(1, inp.ownMachineCount) }
+
+  const partnerUnit = computeUnitEcon(partnerInp)
+  const ownUnit = computeUnitEcon(ownInp)
+
+  const partnerYearly = computeYearlyForecast(partnerInp)
+  const ownYearly = computeYearlyForecast(ownInp)
+
+  const partnerFinal = partnerYearly[partnerYearly.length - 1]?.bankBalance ?? 0
+  const ownFinal = ownYearly[ownYearly.length - 1]?.bankBalance ?? 0
+  const totalMachineCapex = ownYearly.reduce((s, r) => s + r.machineCapex, 0)
+
+  const partner: ComparisonScenario = { label: 'partner', unit: partnerUnit, yearly: partnerYearly, finalBankBalance: partnerFinal, totalMachineCapex: 0 }
+  const own: ComparisonScenario = { label: 'own', unit: ownUnit, yearly: ownYearly, finalBankBalance: ownFinal, totalMachineCapex }
+
+  const savingPerPUC = inp.partnerPUCCommission - inp.ownUnitCostPerPUC
+  const profitDelta = ownUnit.netProfit - partnerUnit.netProfit
+  const perCustomerWinner: ComparisonVerdict['perCustomerWinner'] =
+    profitDelta > 1 ? 'own' : profitDelta < -1 ? 'partner' : 'tie'
+
+  const finalBalanceDelta = ownFinal - partnerFinal
+  const longTermWinner: ComparisonVerdict['longTermWinner'] =
+    finalBalanceDelta > 1000 ? 'own' : finalBalanceDelta < -1000 ? 'partner' : 'tie'
+
+  // Crossover: first year own balance overtakes partner and stays ahead
+  let crossoverYear: number | null = null
+  if (ownYearly[0]?.bankBalance >= partnerYearly[0]?.bankBalance) {
+    crossoverYear = ownYearly[0].year
+  } else {
+    for (let i = 1; i < ownYearly.length; i++) {
+      if ((ownYearly[i]?.bankBalance ?? -Infinity) >= (partnerYearly[i]?.bankBalance ?? Infinity)) {
+        crossoverYear = ownYearly[i].year
+        break
+      }
+    }
+  }
+
+  const capexRecovered = crossoverYear !== null && ownFinal > 0
+
+  let summary: string
+  if (savingPerPUC <= 0) {
+    summary = `Own machine costs ₹${Math.abs(savingPerPUC)} more per test than partner — partner model wins unconditionally at current rates.`
+  } else if (longTermWinner === 'own' && capexRecovered) {
+    summary = `Own machine saves ₹${savingPerPUC}/test vs partner commission. Capex is recovered by Year ${crossoverYear} and ends ₹${Math.abs(Math.round(finalBalanceDelta)).toLocaleString('en-IN')} ahead overall.`
+  } else if (perCustomerWinner === 'own' && longTermWinner !== 'own') {
+    summary = `Own machine is cheaper per test (saves ₹${savingPerPUC}/test) but the ₹${totalMachineCapex.toLocaleString('en-IN')} capex isn't fully recovered within the forecast horizon — partner model has more cash at year-end.`
+  } else if (longTermWinner === 'partner') {
+    summary = `Partner model ends ₹${Math.abs(Math.round(finalBalanceDelta)).toLocaleString('en-IN')} ahead. Capex cost outweighs per-test savings at current subscriber volumes.`
+  } else {
+    summary = `Both models produce similar outcomes. Adjust subscription price, machine count, or forecast years to see a clear winner.`
+  }
+
+  const verdict: ComparisonVerdict = { perCustomerWinner, perCustomerProfitDelta: profitDelta, longTermWinner, finalBalanceDelta, crossoverYear, capexRecovered, savingPerPUC, summary }
+
+  return { partner, own, verdict }
+}
+
 // ─── Top-level compute ─────────────────────────────────────────────────────
 
 export interface ComputedAll {
@@ -466,6 +552,7 @@ export interface ComputedAll {
   machine: MachineMetrics
   partnerNetwork: PartnerNetworkMetrics
   machineScaling: MachineScalingPoint[]
+  comparison: ModelComparisonData
   ltv: number
   cacPaybackMonths: number
   peakActiveSubs: number
@@ -483,6 +570,7 @@ export function computeAll(inp: ModelInputs): ComputedAll {
   const machine = computeMachineMetrics(inp)
   const partnerNetwork = computePartnerNetwork(inp, yearly)
   const machineScaling = computeOwnMachineScaling(inp)
+  const comparison = computeModelComparison(inp)
 
   const ltv = unit.totalRevenue + unit.floatIncome
   const annualRevenuePerCustomer = ltv / unit.lifetimeDurationYears
@@ -495,5 +583,5 @@ export function computeAll(inp: ModelInputs): ComputedAll {
   const peakYear = peakRow?.year ?? 1
   const marketPenetrationPct = (peakActiveSubs / INDIA_4W_FLEET) * 100
 
-  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct }
+  return { unit, utilCurve, cashflow, yearly, scenarios, driver, machine, partnerNetwork, machineScaling, comparison, ltv, cacPaybackMonths, peakActiveSubs, peakYear, marketPenetrationPct }
 }
